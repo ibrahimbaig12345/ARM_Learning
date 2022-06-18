@@ -1,0 +1,172 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "armstType": {
+      "type": "string",
+      "defaultValue": "Standard_LRS",
+      "allowedValues": [
+        "Standard_LRS",
+        "Standard_ZRS",
+        "Standard_GRS",
+        "Standard_RAGRS",
+        "Premium_LRS"
+      ]
+    },
+    "armappvmName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "armappvmAdminUserName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "armappvmAdminPassword": {
+      "type": "securestring"
+    },
+    "armappvmWindowsOSVersion": {
+      "type": "string",
+      "defaultValue": "2012-R2-Datacenter",
+      "allowedValues": [
+        "2008-R2-SP1",
+        "2012-Datacenter",
+        "2012-R2-Datacenter",
+        "2016-Datacenter",
+        "Windows-Server-Technical-Preview"
+      ]
+    }},
+  "variables": {
+    "ARM_VNETPrefix": "192.168.0.0/16",
+    "ARM_VNETSubnet1Name": "app",
+    "ARM_VNETSubnet1Prefix": "192.168.0.0/24",
+    "ARM_VNETSubnet2Name": "web",
+    "ARM_VNETSubnet2Prefix": "192.168.1.0/24",
+    "armstName": "[concat('armst', uniqueString(resourceGroup().id))]",
+    "armappvmImagePublisher": "MicrosoftWindowsServer",
+    "armappvmImageOffer": "WindowsServer",
+    "armappvmOSDiskName": "armappvmOSDisk",
+    "armappvmVmSize": "Standard_D2as_v5",
+    "armappvmVnetID": "[resourceId('Microsoft.Network/virtualNetworks', 'ARM_VNET')]",
+    "armappvmSubnetRef": "[concat(variables('armappvmVnetID'), '/subnets/', variables('ARM_VNETSubnet1Name'))]",
+    "armappvmStorageAccountContainerName": "vhds",
+    "armappvmNicName": "[concat(parameters('armappvmName'), 'NetworkInterface')]"
+  },
+  "resources": [
+    {
+      "name": "ARM_VNET",
+      "type": "Microsoft.Network/virtualNetworks",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [ ],
+      "tags": {
+        "displayName": "ARM_VNET"
+      },
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[variables('ARM_VNETPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('ARM_VNETSubnet1Name')]",
+            "properties": {
+              "addressPrefix": "[variables('ARM_VNETSubnet1Prefix')]"
+            }
+          },
+          {
+            "name": "[variables('ARM_VNETSubnet2Name')]",
+            "properties": {
+              "addressPrefix": "[variables('ARM_VNETSubnet2Prefix')]"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[variables('armstName')]",
+      "type": "Microsoft.Storage/storageAccounts",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-01-01",
+      "sku": {
+        "name": "[parameters('armstType')]"
+      },
+      "dependsOn": [ ],
+      "tags": {
+        "displayName": "armst"
+      },
+      "kind": "Storage"
+    },
+    {
+      "name": "[variables('armappvmNicName')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', 'ARM_VNET')]"
+      ],
+      "tags": {
+        "displayName": "armappvmNic"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('armappvmSubnetRef')]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[parameters('armappvmName')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('armstName'))]",
+        "[resourceId('Microsoft.Network/networkInterfaces', variables('armappvmNicName'))]"
+      ],
+      "tags": {
+        "displayName": "armappvm"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('armappvmVmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[parameters('armappvmName')]",
+          "adminUsername": "[parameters('armappvmAdminUsername')]",
+          "adminPassword": "[parameters('armappvmAdminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('armappvmImagePublisher')]",
+            "offer": "[variables('armappvmImageOffer')]",
+            "sku": "[parameters('armappvmWindowsOSVersion')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "testvmOSDisk",
+            "vhd": {
+              "uri": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', variables('armstName')), '2016-01-01').primaryEndpoints.blob, variables('armappvmStorageAccountContainerName'), '/', variables('armappvmOSDiskName'), '.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('armappvmNicName'))]"
+            }
+          ]
+        }
+      }
+    }],
+  "outputs": {}
+}
